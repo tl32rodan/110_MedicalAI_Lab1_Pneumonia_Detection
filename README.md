@@ -9,6 +9,12 @@
    
    This experiment aims is to: (1) Write our own custom dataloader, (2) Classify Pneumonia with custom own model, (3) Using ResNet50, ResNet101 and ResNet152 to analysis pneumonia from chest x ray image and (4) Compare the experiment results between different models (5) Optimize classfication accuracy > 90%.
 
+---
+## Environment
+* Framework: Pytorch
+* Library versions: See `requirement.txt`
+
+---
 ## Usage
 ### Training
 `python3 train.py`
