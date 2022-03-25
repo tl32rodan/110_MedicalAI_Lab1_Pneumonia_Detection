@@ -84,6 +84,51 @@ class NeuralNet(nn.Module):
 
         return x
 
+class VGG16(nn.Module):
+   def __init__(self,num_class,pretrained_option=False):
+        super(VGG16,self).__init__()
+        self.model=models.vgg16(pretrained=pretrained_option)
+        
+        if pretrained_option==True:
+            for param in self.model.parameters():
+                param.requires_grad=False
+
+        num_neurons=512*7*7
+        self.model.classifier=nn.Sequential(
+                        nn.Linear(num_neurons, 512*4),
+                        nn.ReLU(),
+                        nn.Linear(512*4, 512),
+                        nn.ReLU(),
+                        nn.Linear(512, num_class),
+                      )
+        
+   def forward(self,X):
+        out=self.model(X)
+        return out
+
+class Alexnet(nn.Module):
+   def __init__(self,num_class,pretrained_option=False):
+        super(Alexnet,self).__init__()
+        self.model=models.alexnet(pretrained=pretrained_option)
+        
+        if pretrained_option==True:
+            for param in self.model.parameters():
+                param.requires_grad=False
+
+        num_neurons=256*6*6
+        self.model.classifier=nn.Sequential(
+                        nn.Linear(num_neurons, 512),
+                        nn.ReLU(),
+                        nn.Linear(512, 128),
+                        nn.ReLU(),
+                        nn.Linear(128, num_class),
+                      )
+        
+   def forward(self,X):
+        out=self.model(X)
+        return out
+
+
 class ResNet50(nn.Module):
    def __init__(self,num_class,pretrained_option=False):
         super(ResNet50,self).__init__()
@@ -282,10 +327,12 @@ if __name__=="__main__":
     examples=iter(train_loader)
     images, labels=examples.next()
     print(images.shape)
-    # imshow(torchvision.utils.make_grid(images[:56],pad_value=20))
     
 
-    model_names = {'ResNet50': ResNet50,
+    model_names = {
+                   'VGG16': VGG16,
+                   'Alexnet': Alexnet,
+                   'ResNet50': ResNet50,
                    'ResNet101': ResNet101,
                    'ResNet152': ResNet152,}
     train_acc_dict = {}
