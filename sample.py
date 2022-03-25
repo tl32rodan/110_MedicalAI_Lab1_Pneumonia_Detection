@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from dataloader import ChestXRayData
 import torchvision 
 from torchvision import datasets
 import torchvision.transforms as transforms
@@ -17,16 +18,15 @@ warnings.simplefilter("ignore")
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
-from torchsummary import summary
 from sklearn.metrics import accuracy_score,classification_report, f1_score,roc_auc_score
 
 def images_transforms(phase):
     if phase == 'training':
         data_transformation =transforms.Compose([
             transforms.Resize(IMAGE_SIZE),
-            transforms.RandomEqualize(10),
+            #transforms.RandomEqualize(10),
             transforms.RandomRotation(degrees=(-25,20)),
-            transforms.CenterCrop(64),
+            transforms.RandomCrop(96),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406],[0.229, 0.224, 0.225])
         ])
@@ -36,7 +36,6 @@ def images_transforms(phase):
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406],[0.229, 0.224, 0.225])
         ])
-        
     
     return data_transformation
 
@@ -95,11 +94,62 @@ class ResNet50(nn.Module):
                 param.requires_grad=False
 
         num_neurons=self.model.fc.in_features
-        self.model.fc=nn.Linear(num_neurons,num_class)
+        self.model.fc=nn.Sequential(
+                        nn.Linear(num_neurons, 512),
+                        nn.ReLU(),
+                        nn.Linear(512, 128),
+                        nn.ReLU(),
+                        nn.Linear(128, num_class),
+                      )
         
    def forward(self,X):
         out=self.model(X)
         return out
+
+class ResNet101(nn.Module):
+   def __init__(self,num_class,pretrained_option=False):
+        super(ResNet101,self).__init__()
+        self.model=models.resnet101(pretrained=pretrained_option)
+        
+        if pretrained_option==True:
+            for param in self.model.parameters():
+                param.requires_grad=False
+
+        num_neurons=self.model.fc.in_features
+        self.model.fc=nn.Sequential(
+                        nn.Linear(num_neurons, 512),
+                        nn.ReLU(),
+                        nn.Linear(512, 128),
+                        nn.ReLU(),
+                        nn.Linear(128, num_class),
+                      )
+        
+   def forward(self,X):
+        out=self.model(X)
+        return out
+
+class ResNet152(nn.Module):
+   def __init__(self,num_class,pretrained_option=False):
+        super(ResNet152,self).__init__()
+        self.model=models.resnet152(pretrained=pretrained_option)
+        
+        if pretrained_option==True:
+            for param in self.model.parameters():
+                param.requires_grad=False
+
+        num_neurons=self.model.fc.in_features
+        self.model.fc=nn.Sequential(
+                        nn.Linear(num_neurons, 512),
+                        nn.ReLU(),
+                        nn.Linear(512, 128),
+                        nn.ReLU(),
+                        nn.Linear(128, num_class),
+                      )
+        
+   def forward(self,X):
+        out=self.model(X)
+        return out
+
 
 def training(model, train_loader, test_loader, Loss, optimizer, epochs, device, num_class, name):
     model.to(device)
@@ -112,6 +162,8 @@ def training(model, train_loader, test_loader, Loss, optimizer, epochs, device, 
     test_F1_score = []
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer , gamma = 0.96)
     for epoch in range(1, epochs+1):
+        if epoch > 20:
+            model.requires_grad_(True)
         with torch.set_grad_enabled(True):
             model.train()
             total_loss=0
@@ -150,10 +202,11 @@ def training(model, train_loader, test_loader, Loss, optimizer, epochs, device, 
         if accuracy > best_evaluated_acc:
             best_evaluated_acc = accuracy
             best_model_wts = copy.deepcopy(model.state_dict())
-    #save model
-    torch.save(best_model_wts, name+".pt")
-    model.load_state_dict(best_model_wts)
-
+        
+        if epochs % 10 == 0:
+            #save model
+            torch.save(best_model_wts, name+".pt")
+            model.load_state_dict(best_model_wts)
     return train_acc , test_acc , test_Recall , test_Precision , test_F1_score
 
 def evaluate(model, device, test_loader):
@@ -205,43 +258,89 @@ def evaluate(model, device, test_loader):
 if __name__=="__main__":
     IMAGE_SIZE=(128,128)
     batch_size=128
-    learning_rate = 0.01
-    epochs=30
+    learning_rate = 0.001
+    epochs=50
     num_classes=2
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print (device)
+    print(device)
 
-    train_path='archive/chest_xray/train'
-    test_path='archive/chest_xray/test'
-    val_path='archive/chest_xray/val'
+    train_path='chest_xray/train'
+    test_path='chest_xray/test'
+    #val_path='chest_xray/val'
 
-    trainset=datasets.ImageFolder(train_path,transform=images_transforms('train'))
-    testset=datasets.ImageFolder(test_path,transform=images_transforms('test'))
-    valset=datasets.ImageFolder(val_path,transform=images_transforms('val'))
+    trainset=ChestXRayData(train_path, trans=images_transforms('training'))
+    testset=ChestXRayData(test_path, trans=images_transforms('test'))
+    #trainset=datasets.ImageFolder(train_path,transform=images_transforms('training'))
+    #testset=datasets.ImageFolder(test_path,transform=images_transforms('testing'))
+    #valset=datasets.ImageFolder(val_path,transform=images_transforms('val'))
 
     train_loader = DataLoader(trainset,batch_size=batch_size,shuffle=True,num_workers=2)
-    test_loader = DataLoader(testset,batch_size=batch_size,shuffle=True,num_workers=2)
-    val_loader = DataLoader(valset,batch_size=batch_size,shuffle=True,num_workers=2)
+    test_loader = DataLoader(testset,batch_size=batch_size,shuffle=False,num_workers=2)
+    #val_loader = DataLoader(valset,batch_size=batch_size,shuffle=True,num_workers=2)
 
     examples=iter(train_loader)
-    images,labels=examples.next()
+    images, labels=examples.next()
     print(images.shape)
     # imshow(torchvision.utils.make_grid(images[:56],pad_value=20))
+    
 
-    model = model = ResNet50(2, True)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    model_names = {'ResNet50': ResNet50,
+                   'ResNet101': ResNet101,
+                   'ResNet152': ResNet152,}
+    train_acc_dict = {}
+    test_acc_dict = {}
+    test_F1_dict = {}
+    for model_name in model_names.keys(): 
+        print('Training', model_name)
+        model = model_names[model_name](2, True)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+        #optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momemtum=0.9)
 
-    # print (summary(model,(3,128,128)))
+        dataiter = iter(train_loader)
+        images , labels = dataiter.next()
 
-    print (train_loader)
-    dataiter = iter(train_loader)
-    images , labels = dataiter.next()
-    print (type(images) , type(labels))
-    print (images.size(),labels.size())
+        Loss = nn.CrossEntropyLoss()
+        train_acc, test_acc, test_Recall, test_Precision, test_F1_score  = training(model, train_loader, test_loader, Loss, optimizer, epochs, device, 2, model_name)
 
-    Loss = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    train_acc , test_acc , test_Recall , test_Precision , test_F1_score  = training(model, train_loader, test_loader, Loss, optimizer,30, device, 2, 'CNN_chest')
+        #train_acc = [h.cpu().numpy() for h in train_acc]
+        #test_acc = [h.cpu().numpy() for h in test_acc]
+        #test_F1_score = [h.cpu().numpy() for h in test_F1_score]
 
+        train_acc_dict[model_name] = train_acc
+        test_acc_dict[model_name] = test_acc
+        test_F1_dict[model_name] = test_F1_score
+    
+    # Train acc
+    plt.figure(figsize=(24,16))
+    plt.title("Training Accuracy")
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy")
+    for k, v in train_acc_dict.items():
+        plt.plot(range(1,epochs+1), v, label=k)
+    plt.xticks(np.arange(1, epochs+1, 1.0))
+    plt.legend()
+    plt.savefig('train_acc.png')
+
+    # Test acc
+    plt.figure(figsize=(24,16))
+    plt.title("Testing Accuracy")
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy")
+    for k, v in test_acc_dict.items():
+        plt.plot(range(1,epochs+1), v, label=k)
+    plt.xticks(np.arange(1, epochs+1, 1.0))
+    plt.legend()
+    plt.savefig('test_acc.png')
+
+    # Test F1
+    plt.figure(figsize=(24,16))
+    plt.title("Testing F1 Score")
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy")
+    for k, v in test_F1_dict.items():
+        plt.plot(range(1,epochs+1), v, label=k)
+    plt.xticks(np.arange(1, epochs+1, 1.0))
+    plt.legend()
+    plt.savefig('test_f1.png')
